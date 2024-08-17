@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+.env
+.venv
+.mypy_cache/
+.pytest_cache/
+.tox/
+.coverage
+.cache/
+poetry.lock
+/Users/borja/Library/Caches/pypoetry/virtualenvs/
