@@ -204,7 +204,13 @@ def discretize_and_calculate_cramers_v(data: pd.DataFrame, feature: str, target:
         discretizer = EqualWidthDiscretiser(bins=bins, variables=[feature])
         discretized_feature = discretizer.fit_transform(data[[feature]])
     elif strategy == 'decision_tree':
-        discretizer = DecisionTreeDiscretiser(cv=5, scoring='balanced_accuracy', variables=[feature], regression=False, param_grid={'max_depth': [1, 2, 3, 4, 5]}, random_state=123)
+        discretizer = DecisionTreeDiscretiser(cv=5, scoring='balanced_accuracy', 
+                                              variables=[feature], 
+                                              regression=False, 
+                                              param_grid={'max_depth': [2, 3, 4, 5]},
+                                              random_state=cfg.SEED,
+                                              bin_output = 'boundaries'
+                                              )
         discretized_feature = discretizer.fit_transform(data[[feature]], data[target])
     elif strategy == 'geometric_width':
         discretizer = GeometricWidthDiscretiser(bins=bins, variables=[feature])
@@ -234,7 +240,7 @@ def find_best_discretization_strategy(data: pd.DataFrame, feature: str, target: 
     best_strategy = ''
     best_discretizer = None
     
-    strategies = ['equal_frequency', 'equal_width', 'decision_tree', 'geometric_width']
+    strategies = ['decision_tree','equal_frequency', 'equal_width', 'geometric_width']
     
     for bins in bin_range:
         for strategy in strategies:
@@ -285,7 +291,6 @@ def print_best_results(best_results: Dict[str, Dict[str, Any]]) -> None:
     best_results (Dict[str, Dict[str, Any]]): The best results for each feature.
     """
     sorted_features = sorted(best_results.items(), key=lambda x: x[1]['best_cramers_v'], reverse=True)
-    print("Most relevant features based on Cramér's V:")
     for feature, result in sorted_features:
         print(f'Feature: {feature}, Best Cramér\'s V: {result["best_cramers_v"]:.4f} with {result["best_bins"]} bins using {result["best_strategy"]} strategy')
 
@@ -313,7 +318,7 @@ def fit_best_discretizers(data: pd.DataFrame, best_results: Dict[str, Dict[str, 
             discretizer = EqualWidthDiscretiser(bins=bins, variables=[feature])
             discretizer.fit(data[[feature]])
         elif strategy == 'decision_tree':
-            discretizer = DecisionTreeDiscretiser(cv=5, scoring='balanced_accuracy', variables=[feature], regression=False, param_grid={'max_depth': [1, 2, 3, 4, 5]}, random_state=cfg.SEED)
+            discretizer = DecisionTreeDiscretiser(cv=5, scoring='balanced_accuracy',variables=[feature], regression=False,random_state=cfg.SEED)
             discretizer.fit(data[[feature]], data[target])
         elif strategy == 'geometric_width':
             discretizer = GeometricWidthDiscretiser(bins=bins, variables=[feature])
@@ -338,7 +343,44 @@ def create_binned_dataset(data: pd.DataFrame, fitted_discretizers: Dict[str, Any
     
     for feature, discretizer in fitted_discretizers.items():
         binned_feature = discretizer.transform(data[[feature]])
-        binned_feature.columns = [f'binned_{feature}']
+        #binned_feature.columns = [f'binned_{feature}']
         binned_data = pd.concat([binned_data, binned_feature], axis=1)
     
     return binned_data
+
+def compare_variances(best_results: dict, train_features: pd.DataFrame, column_to_discretize: str) -> pd.DataFrame:
+    """
+    Compare the variances of the original column and within each bin after discretization.
+
+    Parameters:
+    - best_results: dict, contains the best discretizer for the column
+    - train_features: pd.DataFrame, the dataset containing the column to be discretized
+    - column_to_discretize: str, the name of the column to be discretized
+
+    Returns:
+    - pd.DataFrame, comparison of variances including bin edges
+    """
+    best_discretizer = best_results[column_to_discretize]['best_discretizer']
+
+    # Retrieve bin edges from best_discretizer
+    bin_edges = best_discretizer.binner_dict_[column_to_discretize]
+
+    # Discretize the chosen column into bins using the bin edges and calculate variances
+    comparison = (
+        train_features
+        .assign(
+            binned_column=pd.cut(train_features[column_to_discretize], bins=bin_edges, labels=False, include_lowest=True)
+        )
+        .groupby('binned_column')[column_to_discretize]
+        .var()
+        .reset_index(name='Within Bin Variance')
+        .assign(
+            Bin=lambda df: df['binned_column'],
+            Bin_Edges=lambda df: df['binned_column'].apply(lambda x: f"{bin_edges[x]} - {bin_edges[x+1]}"),
+            Original_Variance=train_features[column_to_discretize].var()
+        )
+        .drop(columns=['binned_column'])
+        .reindex(columns=['Bin', 'Bin_Edges', 'Within Bin Variance', 'Original_Variance'])
+    )
+
+    return comparison
