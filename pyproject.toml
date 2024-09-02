@@ -10,7 +10,6 @@ packages = [{include = "churn", from = "src"}]
 python = ">=3.11,<3.13"
 pandas = "^2.2.2"
 scikit-learn = "^1.5.1"
-pytest = "^8.3.2"
 path = "^17.0.0"
 logging = "^0.4.9.6"
 pyarrow = "^17.0.0"
@@ -25,6 +24,8 @@ ydata-profiling = "^4.9.0"
 pgmpy = "^0.1.26"
 bnlearn = "^0.8.9"
 feature-engine = "^1.8.0"
+optuna = "^3.6.1"
+imbalanced-learn = "^0.12.3"
 
 
 [build-system]

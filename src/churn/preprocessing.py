@@ -21,28 +21,3 @@ def load_data(file_path: Path) -> pd.DataFrame:
         raw = pd.read_parquet(file)
     logging.info("Data loaded from %s", file_path)
     return raw
-
-# class CategoricalTransformer(BaseEstimator, TransformerMixin):
-#     def __init__(self, columns=None):
-#         self.columns = columns
-
-#     def fit(self, X, y=None):
-#         return self
-
-#     def transform(self, X):
-#         X = X.copy()
-#         for column in self.columns:
-#             X[column] = X[column].astype('category')
-#         return X
-    
-# class CategoricalTransformerTarget(BaseEstimator, TransformerMixin):
-#     def __init__(self):
-#         pass
-
-#     def fit(self, y, X=None):
-#         return self
-
-#     def transform(self, y):
-#         y = y.copy()
-#         return y.astype('category')
-    
