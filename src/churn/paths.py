@@ -1,3 +1,7 @@
+"""
+Module for setting the paths to store models and data.
+"""
+
 import logging
 from pathlib import Path
 

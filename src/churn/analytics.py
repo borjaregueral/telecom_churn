@@ -1,3 +1,7 @@
+"""
+Module for analyzing and discretizing the dataset variables.
+"""
+
 import logging
 from typing import Any, Dict, List, Tuple, Type
 
@@ -12,6 +16,11 @@ from feature_engine.discretisation import (
     EqualWidthDiscretiser,
     GeometricWidthDiscretiser,
 )
+from IPython.display import HTML, display
+from scipy.stats import ttest_ind
+from sklearn.model_selection import KFold, RepeatedStratifiedKFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
 import churn.config as cfg
 
@@ -256,11 +265,13 @@ def discretize_and_calculate_cramers_v(
         discretized_feature = discretizer.fit_transform(data[[feature]])
     elif strategy == "decision_tree":
         discretizer = DecisionTreeDiscretiser(
-            cv=5,
+            cv=RepeatedStratifiedKFold(
+                n_splits=cfg.N_SPLITS, n_repeats=cfg.N_REPEATS, random_state=cfg.SEED
+            ),
             scoring="balanced_accuracy",
             variables=[feature],
             regression=False,
-            param_grid={"max_depth": [2, 3, 4, 5]},
+            param_grid={"max_depth": [2, 3, 4, 5, 6]},
             random_state=cfg.SEED,
             bin_output="boundaries",
         )
@@ -477,3 +488,405 @@ def compare_variances(
     )
 
     return comparison
+
+
+def aggregate_by_variable(
+    df: pd.DataFrame, variables: List[str]
+) -> Dict[str, pd.DataFrame]:
+    """
+    Aggregates statistics by variable for each churn group.
+
+    Parameters:
+    - df: DataFrame containing the data.
+    - variables: List of numerical column names to aggregate.
+
+    Returns:
+    A dictionary where keys are variable names and values are DataFrames with aggregated statistics.
+    """
+    results = {}
+
+    for var in variables:
+        churn_stats = (
+            df.groupby("churn", observed=False)[var]
+            .agg(count="count", sum="sum", mean="mean", median="median")
+            .astype({"sum": int, "mean": int, "median": int})
+        )
+        results[var] = churn_stats
+
+    return results
+
+
+def display_numeric_results(results: Dict[str, pd.DataFrame]) -> None:
+    """
+    Displays the numeric results in an HTML table format.
+
+    Parameters:
+    - results: A dictionary where keys are variable names and values are DataFrames with aggregated statistics.
+    """
+    # Initialize HTML output
+    html_output = """
+    <style>
+        .result-table { width: 100%; }
+        .result-table td { vertical-align: top; padding: 10px; }
+        .result-title { font-size: 12px; font-weight: bold; text-align: left; }
+    </style>
+    <table class="result-table">
+    <tr>
+    """
+
+    # Generate HTML rows and columns
+    rows = [
+        f"<td><div class='result-title'>{var}_vs_churn:</div>{df.to_html()}</td>"
+        for var, df in results.items()
+    ]
+
+    # Split rows into chunks of 3 columns each
+    rows_chunks = [rows[i : i + 3] for i in range(0, len(rows), 3)]
+    html_output += "</tr><tr>".join(["".join(chunk) for chunk in rows_chunks])
+    html_output += "</tr></table>"
+
+    # Display the HTML output
+    display(HTML(html_output))
+
+
+def aggregate_categorical_variables(data, target):
+    # Convert the target column to numeric
+    data[target] = pd.to_numeric(data[target], errors="coerce")
+
+    # Select only categorical columns from the DataFrame
+    categorical_columns = data.select_dtypes(include=["object", "category"]).columns
+
+    results = {}
+
+    for col in categorical_columns:
+        if col != target:
+            agg_result = (
+                data.groupby(col, observed=False)[target]
+                .agg(["count", "mean"])
+                .assign(mean=lambda x: (x["mean"]).round(2))
+            )
+            results[col] = agg_result
+
+    data[target] = data[target].astype("category")
+    return results
+
+
+def display_categorical_results(results: Dict[str, pd.DataFrame]) -> None:
+    """
+    Displays the categorical results in an HTML table format.
+
+    Parameters:
+    - results: A dictionary where keys are variable names and values are DataFrames with aggregated statistics.
+    """
+    # Initialize HTML output
+    html_output = """
+    <style>
+        .result-table { width: 100%; }
+        .result-table td { vertical-align: top; padding: 10px; }
+        .result-title { font-size: 12px; font-weight: bold; text-align: left; }
+    </style>
+    <table class="result-table">
+    <tr>
+    """
+
+    # Generate HTML rows and columns
+    rows = [
+        f"<td><div class='result-title'>{var}_vs_churn:</div>{df.to_html()}</td>"
+        for var, df in results.items()
+    ]
+
+    # Split rows into chunks of 2 columns each
+    rows_chunks = [rows[i : i + 2] for i in range(0, len(rows), 2)]
+    html_output += "</tr><tr>".join(["".join(chunk) for chunk in rows_chunks])
+    html_output += "</tr></table>"
+
+    # Display the HTML output
+    display(HTML(html_output))
+
+    from scipy.stats import ttest_ind
+
+
+def compute_ttest(
+    group1: pd.DataFrame, group2: pd.DataFrame, column_name: str
+) -> Tuple[float, float]:
+    """
+    Computes a T-test between two groups for a specified column.
+
+    Parameters:
+    - group1: First group DataFrame.
+    - group2: Second group DataFrame.
+    - column_name: The column name on which to perform the T-test.
+
+    Returns:
+    A tuple containing the t-statistic and p-value.
+    """
+    t_stat, p_value = ttest_ind(group1[column_name], group2[column_name])
+    return t_stat, p_value
+
+
+def print_ttest_results(column_name: str, t_stat: float, p_value: float) -> None:
+    """
+    Prints the results of a T-test.
+
+    Parameters:
+    - column_name: The column name on which the T-test was performed.
+    - t_stat: The t-statistic from the T-test.
+    - p_value: The p-value from the T-test.
+    """
+    print(f"T-test for {column_name}: t-statistic = {t_stat}, p-value = {p_value}")
+
+
+def perform_ttest(group1: pd.DataFrame, group2: pd.DataFrame, column_name: str) -> None:
+    """
+    Performs a T-test between two groups for a specified column and prints the results.
+
+    Parameters:
+    - group1: First group DataFrame.
+    - group2: Second group DataFrame.
+    - column_name: The column name on which to perform the T-test.
+    """
+    t_stat, p_value = compute_ttest(group1, group2, column_name)
+    print_ttest_results(column_name, t_stat, p_value)
+
+
+def calculate_cate_estimates(
+    kf: KFold, X: pd.DataFrame, y: pd.Series, model: SVC
+) -> List[float]:
+    """
+    Calculates CATE estimates using cross-validation.
+
+    Parameters:
+    - kf: KFold cross-validator.
+    - X: Feature set.
+    - y: Target set.
+    - model: CATE model (e.g., ThresholdedSVC).
+
+    Returns:
+    A list of CATE estimates for each fold.
+    """
+    cate_estimates: List[float] = []
+
+    for train_index, test_index in kf.split(X):
+        # Train and test splits for each fold
+        X_train_fold, X_test_fold = X.iloc[train_index], X.iloc[test_index]
+        y_train_fold, y_test_fold = y.iloc[train_index], y.iloc[test_index]
+
+        # Train the CATE model
+        model.fit(X_train_fold, y_train_fold)
+
+        # Get the predicted treatment effects on the test fold
+        treatment_effects_fold = model.predict_proba(X_test_fold)[
+            :, 1
+        ]  # Assuming you're predicting probabilities
+
+        # Calculate CATE for the test fold
+        cate_fold = np.mean(treatment_effects_fold)
+        cate_estimates.append(cate_fold)
+
+    return cate_estimates
+
+
+def print_cate_statistics(cate_estimates: List[float]) -> None:
+    """
+    Prints the mean and variance of CATE estimates.
+
+    Parameters:
+    - cate_estimates: A list of CATE estimates.
+    """
+    mean_cate = np.mean(cate_estimates)
+    variance_cate = np.var(cate_estimates)
+    print(f"Mean CATE across folds: {mean_cate}")
+    print(f"Variance of CATE across folds: {variance_cate}")
+
+
+def separate_treatment_variable(
+    X_train: pd.DataFrame, X_test: pd.DataFrame, treatment_col: str
+) -> Tuple[pd.Series, pd.Series, pd.DataFrame, pd.DataFrame]:
+    """
+    Separates the treatment variable from the feature sets.
+
+    Parameters:
+    - X_train: Training feature set.
+    - X_test: Test feature set.
+    - treatment_col: The name of the treatment column.
+
+    Returns:
+    A tuple containing the treatment variables and the feature sets without the treatment column.
+    """
+    treatment_train = X_train[treatment_col]
+    treatment_test = X_test[treatment_col]
+    X_train = X_train.drop(columns=treatment_col)
+    X_test = X_test.drop(columns=treatment_col)
+    return treatment_train, treatment_test, X_train, X_test
+
+
+def scale_features(
+    X_train: pd.DataFrame, X_test: pd.DataFrame, scaler: StandardScaler
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Scales the feature sets using the provided scaler.
+
+    Parameters:
+    - X_train: Training feature set.
+    - X_test: Test feature set.
+    - scaler: Scaler to fit on the training data and transform both training and test data.
+
+    Returns:
+    A tuple containing the scaled training and test feature sets.
+    """
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    X_train_scaled = pd.DataFrame(X_train_scaled, columns=X_train.columns)
+    X_test_scaled = pd.DataFrame(X_test_scaled, columns=X_test.columns)
+    return X_train_scaled, X_test_scaled
+
+
+def add_treatment_variable(
+    X_train_scaled: pd.DataFrame,
+    X_test_scaled: pd.DataFrame,
+    treatment_train: pd.Series,
+    treatment_test: pd.Series,
+    treatment_col: str,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Adds the treatment variable back to the scaled feature sets.
+
+    Parameters:
+    - X_train_scaled: Scaled training feature set.
+    - X_test_scaled: Scaled test feature set.
+    - treatment_train: Treatment variable for the training set.
+    - treatment_test: Treatment variable for the test set.
+    - treatment_col: The name of the treatment column.
+
+    Returns:
+    A tuple containing the scaled training and test feature sets with the treatment variable added back.
+    """
+    X_train_scaled[treatment_col] = treatment_train.values
+    X_test_scaled[treatment_col] = treatment_test.values
+    return X_train_scaled, X_test_scaled
+
+
+def define_cate_variables(
+    X_train_scaled: pd.DataFrame,
+    X_test_scaled: pd.DataFrame,
+    y_train: pd.Series,
+    y_test: pd.Series,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Defines covariates, treatment, and outcome for the CATE model.
+
+    Parameters:
+    - X_train_scaled: Scaled training feature set.
+    - X_test_scaled: Scaled test feature set.
+    - y_train: Training target set.
+    - y_test: Test target set.
+
+    Returns:
+    A tuple containing the covariates, treatment, and outcome for both training and test sets.
+    """
+    covariates = ["customer_service_rating", "customer_happiness"]
+
+    X_train_cate = X_train_scaled[covariates].values
+    X_test_cate = X_test_scaled[covariates].values
+    treatment_train = X_train_scaled["treatment"].values
+    treatment_test = X_test_scaled["treatment"].values
+    y_train_cate = y_train.values
+    y_test_cate = y_test.values
+
+    return (
+        X_train_cate,
+        X_test_cate,
+        treatment_train,
+        treatment_test,
+        y_train_cate,
+        y_test_cate,
+    )
+
+
+def get_top_customers_indices(
+    uplift_scores: np.ndarray, top_percent: float = 0.1
+) -> np.ndarray:
+    """
+    Identifies the indices of the top customers based on uplift scores.
+
+    Parameters:
+    - uplift_scores: Array of uplift scores.
+    - top_percent: Percentage of top customers to select.
+
+    Returns:
+    An array of indices of the top customers.
+    """
+    n_customers = len(uplift_scores)
+    top_customers_count = int(top_percent * n_customers)
+    top_customers_indices = np.argsort(np.abs(uplift_scores))[-top_customers_count:]
+    top_customers_sorted_indices = top_customers_indices[
+        np.argsort(uplift_scores[top_customers_indices])
+    ]
+    return top_customers_sorted_indices
+
+
+def unscale_features(
+    scaled_features: pd.DataFrame, scaler: StandardScaler
+) -> pd.DataFrame:
+    """
+    Unscales the features using the provided scaler.
+
+    Parameters:
+    - scaled_features: Scaled feature set.
+    - scaler: Scaler used to scale the features.
+
+    Returns:
+    A DataFrame containing the unscaled features.
+    """
+    unscaled_features = pd.DataFrame(
+        scaler.inverse_transform(scaled_features.values),
+        columns=scaled_features.columns,
+        index=scaled_features.index,
+    )
+    return unscaled_features
+
+
+def get_top_customers_for_treatment(
+    uplift_scores: np.ndarray,
+    X_test_scaled: pd.DataFrame,
+    scaler: StandardScaler,
+    top_percent: float = 0.1,
+) -> pd.DataFrame:
+    """
+    Identifies the top customers for treatment based on uplift scores and returns their unscaled features.
+
+    Parameters:
+    - uplift_scores: Array of uplift scores.
+    - X_test_scaled: Scaled test feature set.
+    - scaler: Scaler used to scale the features.
+    - top_percent: Percentage of top customers to select for treatment.
+
+    Returns:
+    A DataFrame containing the unscaled features of the top customers for treatment along with their uplift scores and treatment status.
+    """
+    # Flatten uplift scores if necessary
+    uplift_scores = uplift_scores.flatten()
+
+    # Get the indices of the top customers
+    top_customers_sorted_indices = get_top_customers_indices(uplift_scores, top_percent)
+
+    # Apply the treatment to the top customers
+    top_customers_for_treatment = X_test_scaled.iloc[top_customers_sorted_indices]
+
+    # Optionally, get the uplift for this top group
+    top_customers_uplift = uplift_scores[top_customers_sorted_indices]
+
+    # Create a DataFrame to include both customer features and their uplift scores
+    top_customers_df = top_customers_for_treatment.copy()
+    top_customers_df["Uplift Score"] = top_customers_uplift
+
+    # Drop the treatment column before unscaling
+    top_customers_no_treatment = top_customers_for_treatment.drop(columns=["treatment"])
+
+    # Unscale the features using the scaler
+    top_customers_unscaled = unscale_features(top_customers_no_treatment, scaler)
+
+    # Add the uplift scores and to the unscaled DataFrame
+    top_customers_unscaled["Uplift Score"] = top_customers_uplift
+
+    return top_customers_unscaled

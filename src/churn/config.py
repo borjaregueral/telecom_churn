@@ -27,7 +27,7 @@ PLOTLY_LAYOUT_CONFIG = {
 }
 
 # Discretization parameters
-BIN_SIZES = range(4, 101)
+BIN_SIZES = range(2, 11)
 OPT_STEP = 0.05
 RELATIONSHIP_THRESHOLD = 0.10
 
@@ -43,3 +43,7 @@ N_REPEATS = 2
 
 # Number of trials for hyperparameter tunning Optuna
 N_TRIALS = 50
+
+# Percentile for the confidence interval
+LOWER_PERCENTILE = 2.5
+UPPER_PERCENTILE = 97.5
