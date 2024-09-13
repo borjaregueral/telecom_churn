@@ -666,7 +666,7 @@ def calculate_cate_estimates(
     """
     cate_estimates: List[float] = []
 
-    for train_index, test_index in kf.split(X):
+    for train_index, test_index in kf.split(X, y):
         # Train and test splits for each fold
         X_train_fold, X_test_fold = X.iloc[train_index], X.iloc[test_index]
         y_train_fold, y_test_fold = y.iloc[train_index], y.iloc[test_index]

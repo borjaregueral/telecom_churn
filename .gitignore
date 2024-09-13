@@ -14,3 +14,6 @@ __pycache__/
 poetry.lock
 /Users/borja/Library/Caches/pypoetry/virtualenvs/
 /Users/borja/Documents/Somniumrema/projects/ml/churn/data/
+
+# Mac_related
+.DS_Store

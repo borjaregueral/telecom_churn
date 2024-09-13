@@ -27,7 +27,7 @@ PLOTLY_LAYOUT_CONFIG = {
 }
 
 # Discretization parameters
-BIN_SIZES = range(2, 11)
+BIN_SIZES = range(4, 11)
 OPT_STEP = 0.05
 RELATIONSHIP_THRESHOLD = 0.10
 
